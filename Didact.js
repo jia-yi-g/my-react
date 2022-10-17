@@ -38,6 +38,37 @@ function createDOM(fiber) {
     .forEach((prop) => (dom[prop] = fiber.props[prop]));
 }
 
+const isEvent=key=>key.startsWith("on")
+const isProperty=key=>key!=="children"&&!isEvent(key)
+const isNew=(prev,next)=>key=>prev[key]!==next[key]
+const isGone=(prev,next)=>key=>!(key in next)
+function updateDom(dom,prevProps,nextProps) {
+  //改变,删除过去的事件监听器
+  Object.keys(prevProps).filter(isEvent).filter(key=>!(key in nextProps)||isNew(prevProps,nextProps)(key))
+  .forEach(name=>{
+    const eventType=name.toLowerCase().substring(2)
+    dom.removeEventListener(eventType, prevProps[name]);//参数为type和名称
+  })
+  //添加事件监听器
+  Object.keys(nextProps).filter(isEvent).filter(isNew(prevProps,nextProps))
+  .forEach(name=>{
+    const eventType=name.toLowerCase().substring(2)
+    dom.addEventListener(eventType,nextProps[name])
+  })
+  //移除旧的属性
+  Object.keys(prevProps).filter(isProperty).filter(isGone(prevProps,nextProps))
+  .forEach(name=>{
+    dom[name]=""
+  })
+  //改变或添加新属性
+  Object.keys(nextProps).filter(isProperty).filter(isNew(prevProps,nextProps))
+  .forEach(name=>{
+    dom[name]=nextProps[name]
+  })
+}
+
+
+
 function commitRoot(){
   //add nodes to dom
   deletions.forEach(commitWork)
@@ -50,6 +81,15 @@ function commitWork(fiber){
     return 
   }
   const domParent=fiber.parent.dom
+  if(fiber.effectTag==="PLACEMENT"&&fiber.dom!=null){
+    domParent.appendChild(fiber.dom)
+  }
+  else if(fiber.effectTag==="DELETION"){
+    domParent.removeChild(fiber.dom)
+  }
+  else if(fiber.effectTag==="UPDATE"&&fiber.dom!=null){
+    updateDom(fiber.dom,fiber.alternate.props,fiber.props)
+  }
   domParent.appendChild(fiber.dom)
   commitWork(fiber.child)
   commitWork(fiber.sibling)
@@ -78,7 +118,7 @@ function workloop(deadline) {
     while(nextUnitOfWork && !shouldYield){
         nextUnitOfWork =performUnitOfWork(
             nextUnitOfWork
-        )//根据顺序执行一个个unit的work，在执行这一个unit的同时返回下一个unit
+        )
         shouldYield=deadline.timeRemaining() <1//在剩余时间不足时将控制权交给浏览器
     }
     if(!nextUnitOfWork&&wipRoot){
